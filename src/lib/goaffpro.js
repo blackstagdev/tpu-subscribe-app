@@ -1,10 +1,16 @@
+// src/lib/goaffpro.js
 import {
-  GOAFFPRO_API_KEY_1,
-  GOAFFPRO_API_KEY_2
+  GOAFFPRO_API_KEY_1 as ENV_KEY_1,
+  GOAFFPRO_API_KEY_2 as ENV_KEY_2
 } from '$env/static/private';
 
+// Provide temporary fallbacks for local/dev environments
+const GOAFFPRO_API_KEY_1 = ENV_KEY_1 || '';
+const GOAFFPRO_API_KEY_2 = ENV_KEY_2 || '';
+
 /**
- * Check affiliate sales across two GoAffPro stores
+ * Check a customer's GoAffPro affiliate sales across two stores.
+ * Efficiently queries store 1 first, then store 2 only if not found.
  */
 export async function checkAffiliateSales(email, days = 30) {
   if (!email) {
@@ -15,7 +21,10 @@ export async function checkAffiliateSales(email, days = 30) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
   async function fetchFromStore(apiKey, storeLabel) {
-    if (!apiKey) return { found: false, count: 0, sales: 0, source: storeLabel };
+    if (!apiKey) {
+      console.warn(`⚠️ No API key for ${storeLabel} — skipping check`);
+      return { found: false, count: 0, sales: 0, source: storeLabel };
+    }
 
     const url = new URL('https://api.goaffpro.com/v1/admin/affiliates');
     url.searchParams.set('created_at_min', since);
@@ -25,9 +34,7 @@ export async function checkAffiliateSales(email, days = 30) {
     );
 
     const res = await fetch(url, {
-      headers: {
-        'X-GOAFFPRO-ACCESS-TOKEN': apiKey
-      }
+      headers: { 'X-GOAFFPRO-ACCESS-TOKEN': apiKey }
     });
 
     if (!res.ok) {
@@ -38,6 +45,7 @@ export async function checkAffiliateSales(email, days = 30) {
 
     const data = await res.json();
     const affiliates = Array.isArray(data.affiliates) ? data.affiliates : [];
+
     const affiliate = affiliates.find(
       (a) => a.email && a.email.toLowerCase() === email.toLowerCase()
     );

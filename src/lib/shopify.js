@@ -1,10 +1,8 @@
-// src/lib/shopify.js
 import {
   SHOPIFY_DOMAIN,
   SHOPIFY_ACCESS_TOKEN
 } from '$env/static/private';
-
-import { checkAffiliateSales } from '$lib/goaffpro'; // ✅ uses your GoAffPro module
+import { checkAffiliateSales } from '$lib/goaffpro';
 
 const API = `https://${SHOPIFY_DOMAIN}/admin/api/2024-07`;
 
@@ -29,12 +27,12 @@ async function shopifyFetch(path) {
 }
 
 /**
- * 🏷️ Get all customers that contain a specific tag
- * Requests `tags` explicitly (Shopify does not return it by default)
+ * 🏷️ Get all customers containing a specific tag
+ * Supports pagination.
  */
 export async function getTaggedCustomers(tag) {
   let allTagged = [];
-  let nextPageUrl = `/customers.json?limit=250&fields=id,email,tags,first_name,last_name`;
+  let nextPageUrl = `/customers.json?limit=250&fields=id,email,tags,first_name,last_name,created_at`;
 
   while (nextPageUrl) {
     const res = await fetch(`${API}${nextPageUrl}`, {
@@ -53,14 +51,12 @@ export async function getTaggedCustomers(tag) {
     const data = await res.json();
     const customers = Array.isArray(data.customers) ? data.customers : [];
 
-    // Filter by tag (case-insensitive)
     const tagged = customers.filter(
       (c) => c.tags && c.tags.toLowerCase().includes(tag.toLowerCase())
     );
 
     allTagged = allTagged.concat(tagged);
 
-    // Parse pagination links from headers
     const linkHeader = res.headers.get('link');
     if (linkHeader && linkHeader.includes('rel="next"')) {
       const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
@@ -69,16 +65,15 @@ export async function getTaggedCustomers(tag) {
       nextPageUrl = null;
     }
 
-    console.log(`📄 Fetched ${customers.length} customers, found ${tagged.length} tagged.`);
+    console.log(`📄 Page fetched: ${customers.length} customers, ${tagged.length} matched.`);
   }
 
-  console.log(`🧾 Total tagged customers: ${allTagged.length}`);
+  console.log(`🧾 Total ${allTagged.length} customers with tag "${tag}".`);
   return allTagged;
 }
 
-
 /**
- * 🛒 Check Shopify orders for a specific customer within the last X days
+ * 🛒 Check Shopify orders for a specific customer
  */
 export async function checkOrders(customerId, days) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
@@ -92,8 +87,7 @@ export async function checkOrders(customerId, days) {
 }
 
 /**
- * 🔗 Optional helper:
- * Combines Shopify and GoAffPro data for unified checking
+ * Combine Shopify + GoAffPro checks
  */
 export async function checkCustomerActivity(email, customerId, days = 30) {
   const orders = await checkOrders(customerId, days);
@@ -102,7 +96,7 @@ export async function checkCustomerActivity(email, customerId, days = 30) {
 }
 
 /**
- * 🧹 Remove a tag from the customer's existing tag string
+ * (Kept for later use, not used in diagnostics)
  */
 export function removeTag(tag, currentTags) {
   if (!currentTags) return '';
@@ -113,12 +107,8 @@ export function removeTag(tag, currentTags) {
     .join(', ');
 }
 
-/**
- * ✏️ Update a customer's tags
- */
 export async function updateTag(customerId, tags) {
   const payload = { customer: { id: customerId, tags } };
-
   const res = await fetch(`${API}/customers/${customerId}.json`, {
     method: 'PUT',
     headers: {
@@ -130,8 +120,8 @@ export async function updateTag(customerId, tags) {
 
   if (!res.ok) {
     const text = await res.text();
-    console.error('Failed to update customer tags', res.status, text);
-    throw new Error(`Failed to update tags for customer ${customerId}`);
+    console.error('Failed to update tags', res.status, text);
+    throw new Error(`Failed to update tags for ${customerId}`);
   }
 
   console.log(`✅ Updated tags for customer ${customerId}: ${tags}`);
